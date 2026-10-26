@@ -5,12 +5,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <script>
       // Suprime avisos e erros inofensivos de WebSocket do Vite HMR desativado no ambiente cloud
+      (function() {
+        var origConsoleError = console.error;
+        var origConsoleWarn = console.warn;
+        function isViteHmrError(args) {
+          try {
+            var text = Array.prototype.slice.call(args).map(function(arg) {
+              if (typeof arg === 'string') return arg;
+              if (arg && arg.message) return arg.message;
+              if (arg && arg.stack) return arg.stack;
+              return '';
+            }).join(' ');
+            return text.includes('[vite]') || text.includes('WebSocket') || text.includes('vite:ws') || text.includes('@vite/client');
+          } catch(e) {
+            return false;
+          }
+        }
+        console.error = function() {
+          if (isViteHmrError(arguments)) return;
+          return origConsoleError.apply(console, arguments);
+        };
+        console.warn = function() {
+          if (isViteHmrError(arguments)) return;
+          return origConsoleWarn.apply(console, arguments);
+        };
+      })();
       window.addEventListener('unhandledrejection', function(event) {
         var reason = event.reason;
         var msg = reason && (reason.message || String(reason));
         var stack = reason && reason.stack;
         if (
-          (msg && (msg.includes('WebSocket') || msg.includes('vite:ws'))) ||
+          (msg && (msg.includes('WebSocket') || msg.includes('vite:ws') || msg.includes('[vite]'))) ||
           (stack && stack.includes('@vite/client'))
         ) {
           event.stopImmediatePropagation();

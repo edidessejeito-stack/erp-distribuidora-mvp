@@ -4,6 +4,21 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
+import {
+  initDatabase,
+  getDatabaseStatus,
+  authenticateOperator,
+  getAllProducts,
+  getProductById,
+  saveProduct,
+  updateProductStock,
+  deleteProduct,
+  resetDatabaseToDemo,
+  importProducts,
+  getSetting,
+  setSetting,
+  saveSystemLog,
+} from './server/db.ts';
 
 dotenv.config();
 
@@ -227,17 +242,188 @@ Responda estritamente no esquema JSON solicitado em Português do Brasil.
   }
 });
 
-// Inicialização do servidor com Vite Middleware (Dev) ou Arquivos Estáticos (Prod)
+// Rotas do Banco de Dados MySQL 9 & API do ERP
+
+// 1. Status da Conexão MySQL
+app.get('/api/db/status', async (_req: Request, res: Response) => {
+  try {
+    const status = await getDatabaseStatus();
+    res.json(status);
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// 2. Reconectar ao MySQL sob demanda
+app.post('/api/db/reconnect', async (_req: Request, res: Response) => {
+  try {
+    const success = await initDatabase();
+    const status = await getDatabaseStatus();
+    res.json({ success, status });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// 3. Autenticação do Operador
+app.post('/api/auth/login', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, password } = req.body;
+    if (!email) {
+      res.status(400).json({ error: 'E-mail do operador é obrigatório.' });
+      return;
+    }
+    const result = await authenticateOperator(email, password);
+    res.json(result);
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// 4. Listar Produtos (MySQL)
+app.get('/api/products', async (_req: Request, res: Response) => {
+  try {
+    const products = await getAllProducts();
+    res.json(products);
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// 5. Obter Produto por ID
+app.get('/api/products/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const product = await getProductById(req.params.id);
+    if (!product) {
+      res.status(404).json({ error: 'Produto não encontrado.' });
+      return;
+    }
+    res.json(product);
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// 6. Cadastrar ou Atualizar Produto (Upsert)
+app.post('/api/products', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const productData = req.body;
+    if (!productData || !productData.name) {
+      res.status(400).json({ error: 'Dados do produto incompletos (nome é obrigatório).' });
+      return;
+    }
+    const saved = await saveProduct(productData);
+    res.json(saved);
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// 7. Atualizar Produto Existente
+app.put('/api/products/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const productData = { ...req.body, id: req.params.id };
+    const saved = await saveProduct(productData);
+    res.json(saved);
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// 8. Atualização Rápida de Estoque (+ / -) com Kardex
+app.patch('/api/products/:id/stock', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { delta, reason, operatorEmail } = req.body;
+    if (typeof delta !== 'number') {
+      res.status(400).json({ error: 'O valor delta deve ser numérico.' });
+      return;
+    }
+    const updated = await updateProductStock(req.params.id, delta, reason, operatorEmail);
+    res.json(updated);
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// 9. Excluir Produto
+app.delete('/api/products/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    await deleteProduct(req.params.id);
+    res.json({ success: true, message: 'Produto excluído com sucesso.' });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// 10. Restaurar 4 Produtos Padrão Demo
+app.post('/api/products/reset-demo', async (_req: Request, res: Response) => {
+  try {
+    await resetDatabaseToDemo();
+    const products = await getAllProducts();
+    res.json({ success: true, message: 'Banco restaurado para demo.', products });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// 11. Importar Produtos em Lote (Restauração de Backup)
+app.post('/api/products/import', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { products } = req.body;
+    if (!Array.isArray(products)) {
+      res.status(400).json({ error: 'Lista de produtos inválida.' });
+      return;
+    }
+    const count = await importProducts(products);
+    res.json({ success: true, count });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// 12. Obter Configuração
+app.get('/api/settings/:key', async (req: Request, res: Response) => {
+  try {
+    const val = await getSetting(req.params.key, null);
+    res.json({ key: req.params.key, value: val });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// 13. Salvar Configuração
+app.post('/api/settings/:key', async (req: Request, res: Response) => {
+  try {
+    await setSetting(req.params.key, req.body.value);
+    res.json({ success: true });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// 14. Logs do Sistema
+app.post('/api/logs', async (req: Request, res: Response) => {
+  try {
+    await saveSystemLog(req.body);
+    res.json({ success: true });
+  } catch {
+    res.status(200).json({ success: false });
+  }
+});
+
 async function startServer() {
+  // Inicializa o banco de dados MySQL 9 (com tolerância a falhas e fallback em memória)
+  await initDatabase();
+
   const isProduction = process.env.NODE_ENV === 'production';
+
 
   if (!isProduction) {
     const { createServer: createViteServer } = await import('vite');
-    const isHmrDisabled = process.env.DISABLE_HMR === 'true';
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        hmr: isHmrDisabled ? false : { server: httpServer },
+        hmr: false,
       },
       appType: 'spa',
     });

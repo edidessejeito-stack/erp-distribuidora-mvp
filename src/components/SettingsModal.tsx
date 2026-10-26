@@ -1,4 +1,4 @@
-import React, { useState, ChangeEvent, useRef } from 'react';
+import React, { useState, ChangeEvent, useRef, useEffect } from 'react';
 import {
   X,
   Key,
@@ -12,6 +12,7 @@ import {
   Smartphone,
   Sun,
   Moon,
+  Database,
 } from 'lucide-react';
 import {
   getClientGeminiApiKey,
@@ -21,7 +22,10 @@ import {
   exportBackup,
   importBackup,
   resetDatabaseToDemo,
+  getDatabaseStatus,
+  reconnectDatabase,
 } from '../services/db.ts';
+import { DatabaseStatus } from '../types/index.ts';
 import {
   getNotificationPermission,
   requestNotificationPermission,
@@ -54,8 +58,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [notificationStatus, setNotificationStatus] = useState(getNotificationPermission());
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [dbStatus, setDbStatus] = useState<DatabaseStatus | null>(null);
+  const [isTestingDb, setIsTestingDb] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Carrega status da conexão MySQL 9 ao abrir o modal
+  useEffect(() => {
+    let isMounted = true;
+    getDatabaseStatus().then((status) => {
+      if (isMounted) setDbStatus(status);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleTestOrReconnectDb = async () => {
+    try {
+      setIsTestingDb(true);
+      const res = await reconnectDatabase();
+      setDbStatus(res.status);
+      if (res.success && res.status.connected) {
+        onShowToast(`MySQL 9 conectado com sucesso ao host ${res.status.host}!`, 'success');
+        onDataChanged();
+      } else {
+        onShowToast(`Modo Resiliente: ${res.status.lastError || 'Host dados_erp inacessível no momento.'}`, 'warning');
+      }
+    } catch {
+      onShowToast('Falha na comunicação com o servidor backend.', 'warning');
+    } finally {
+      setIsTestingDb(false);
+    }
+  };
+
 
   // Salvar Chave Gemini no LocalStorage
   const handleSaveApiKey = () => {
@@ -243,14 +279,78 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          {/* SEÇÃO 3: Backup e Restauração Local (IndexedDB JSON) */}
+          {/* SEÇÃO 3: Banco de Dados MySQL 9 (EasyPanel) */}
+          <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                <Database className="w-3.5 h-3.5 text-indigo-500" />
+                Banco de Dados MySQL 9 (EasyPanel)
+              </label>
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${
+                  dbStatus?.connected
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                    : 'bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    dbStatus?.connected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                  }`}
+                />
+                {dbStatus?.connected ? 'Conectado ao MySQL' : 'Modo Resiliente / Local'}
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              Persistência centralizada no MySQL 9 via backend Express. Total de produtos cadastrados no servidor: <strong className="text-slate-700 dark:text-slate-300">{dbStatus?.totalProducts ?? '...'}</strong>.
+            </p>
+
+            {/* Informações Técnicas de Conexão */}
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs space-y-1.5 font-mono">
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-slate-500 dark:text-slate-400 font-sans">Host & Porta:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                  {dbStatus?.host || 'dados_erp'}:{dbStatus?.port || 3306}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-slate-500 dark:text-slate-400 font-sans">Banco & Usuário:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                  {dbStatus?.database || 'erpdb'} / {dbStatus?.user || 'erpusr'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-slate-500 dark:text-slate-400 font-sans">Dialeto:</span>
+                <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                  {dbStatus?.dialect || 'MySQL (v9)'}
+                </span>
+              </div>
+              {dbStatus?.lastError && (
+                <div className="pt-1.5 border-t border-slate-200 dark:border-slate-700 text-[10px] text-amber-600 dark:text-amber-400 font-sans">
+                  Obs: {dbStatus.lastError} (dados salvos em cache local com sync automático ao reconectar)
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={handleTestOrReconnectDb}
+              disabled={isTestingDb}
+              className="w-full py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-60"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isTestingDb ? 'animate-spin text-blue-500' : 'text-slate-400'}`} />
+              <span>{isTestingDb ? 'Testando conexão...' : 'Testar Conexão / Sincronizar'}</span>
+            </button>
+          </div>
+
+          {/* SEÇÃO 4: Backup e Restauração (MySQL & JSON) */}
           <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
             <label className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-              Backup & Restauração (IndexedDB)
+              Backup & Restauração (MySQL & JSON)
             </label>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Exporte todos os produtos cadastrados e fotos para um arquivo JSON ou restaure em outro aparelho.
+              Exporte todos os produtos cadastrados no MySQL para um arquivo JSON ou restaure em lote.
             </p>
 
             <div className="grid grid-cols-2 gap-3">
