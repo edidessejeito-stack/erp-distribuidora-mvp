@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="geminiGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1A73E8" />
+      <stop offset="50%" stop-color="#4F46E5" />
+      <stop offset="100%" stop-color="#7C3AED" />
+    </linearGradient>
+    <linearGradient id="boxGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#E2E8F0" />
+    </linearGradient>
+  </defs>
+  <!-- Background with safe zone -->
+  <rect width="512" height="512" rx="128" fill="url(#geminiGrad)" />
+  
+  <!-- Subtle inner circle for visual depth -->
+  <circle cx="256" cy="256" r="180" fill="white" fill-opacity="0.12" />
+
+  <!-- Logistics & Beverage Distributor Iconography -->
+  <!-- Box / Pallet base -->
+  <g transform="translate(106, 126)">
+    <!-- Main Box Body -->
+    <path d="M150 20 L280 90 L280 230 L150 300 L20 230 L20 90 Z" fill="white" fill-opacity="0.95" />
+    <!-- Box Left Flap Shading -->
+    <path d="M20 90 L150 160 L150 300 L20 230 Z" fill="#E2E8F0" />
+    <!-- Box Top Face -->
+    <path d="M150 20 L280 90 L150 160 L20 90 Z" fill="#FFFFFF" />
+    <!-- Beverage Bottle Silhouette Cutout / Overlay -->
+    <path d="M142 80 L158 80 L160 105 L172 135 L172 210 L128 210 L128 135 L140 105 Z" fill="#1A73E8" />
+    <!-- Bottle Cap -->
+    <rect x="140" y="70" width="20" height="8" rx="2" fill="#F59E0B" />
+    <!-- AI Sparkle in upper corner -->
+    <path d="M225 35 Q225 60 250 60 Q225 60 225 85 Q225 60 200 60 Q225 60 225 35 Z" fill="#FBBF24" />
+  </g>
+</svg>

@@ -1,0 +1,6 @@
+{
+  "name": "Distribuidora ERP Inteligente",
+  "description": "ERP moderno, ultrarrápido e mobile-first para distribuidoras com cadastro inteligente via IA e controle de estoque offline-first.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

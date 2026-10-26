@@ -1,0 +1,103 @@
+import React, { useState } from 'react';
+import { Sparkles, ArrowRight, ShieldCheck } from 'lucide-react';
+
+interface LoginViewProps {
+  onLoginSuccess: (email: string) => void;
+}
+
+export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (email.trim()) {
+      onLoginSuccess(email.trim());
+    } else {
+      onLoginSuccess('admin@distribuidora.com.br');
+    }
+  };
+
+  const handleDemoAccess = () => {
+    onLoginSuccess('gerente@distribuidora.com.br');
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-900 animate-fadeIn">
+      <div className="w-full max-w-sm bg-white dark:bg-slate-800 rounded-3xl p-6 sm:p-8 border border-slate-100 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-black/40 space-y-6">
+        {/* Logo e Título */}
+        <div className="text-center space-y-2">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/25">
+            <Sparkles className="w-7 h-7 text-amber-300" />
+          </div>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
+            Distribuidora ERP
+          </h1>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Gestão Inteligente &bull; Cadastro por Foto com IA
+          </p>
+        </div>
+
+        {/* Formulário de Login Tradicional */}
+        <form onSubmit={handleSubmit} className="space-y-3.5">
+          <div>
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+              E-mail do Operador
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="ex: operador@distribuidora.com.br"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+              Senha
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="w-full min-h-[48px] rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+          >
+            <span>Entrar no Sistema</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </form>
+
+        {/* Divisor */}
+        <div className="relative flex items-center justify-center">
+          <div className="border-t border-slate-200 dark:border-slate-700 w-full" />
+          <span className="bg-white dark:bg-slate-800 px-3 text-[11px] text-slate-400 uppercase tracking-wider font-semibold absolute">
+            Ou
+          </span>
+        </div>
+
+        {/* Atalho de Acesso Rápido Demo (1 Clique) */}
+        <button
+          onClick={handleDemoAccess}
+          className="w-full min-h-[48px] rounded-xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-purple-500/10 hover:from-blue-500/20 hover:via-indigo-500/20 hover:to-purple-500/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900/60 font-semibold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
+        >
+          <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+          <span>Acesso Rápido Demo (1 Clique)</span>
+        </button>
+
+        {/* Rodapé Seguro */}
+        <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400 text-center">
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+          <span>Banco local 100% seguro via IndexedDB</span>
+        </div>
+      </div>
+    </div>
+  );
+};
