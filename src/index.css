@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Habilita Dark Mode baseado na classe .dark no HTML/Body (Tailwind v4) */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @keyframes fadeIn {
   from {
     opacity: 0;

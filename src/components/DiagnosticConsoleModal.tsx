@@ -59,6 +59,18 @@ export const DiagnosticConsoleModal: React.FC<DiagnosticConsoleModalProps> = ({
     }
   }, [logs.length, isOpen]);
 
+  // Tecla ESC para fechar o terminal
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const toggleExpand = (id: string) => {
@@ -112,58 +124,71 @@ export const DiagnosticConsoleModal: React.FC<DiagnosticConsoleModalProps> = ({
   const dbCount = logs.filter((l) => l.category === 'DB').length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-2 sm:p-4 animate-fadeIn">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-2 sm:p-4 animate-fadeIn"
+      onClick={onClose}
+    >
       <div 
-        className="w-full max-w-4xl h-[88vh] max-h-[850px] bg-[#0d1117] text-slate-200 rounded-3xl border border-slate-800 shadow-2xl flex flex-col overflow-hidden font-mono text-xs"
+        className="w-full max-w-4xl h-[90vh] max-h-[850px] bg-[#0d1117] text-slate-200 rounded-2xl sm:rounded-3xl border border-slate-800 shadow-2xl flex flex-col overflow-hidden font-mono text-xs"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Cabeçalho do Terminal Dark */}
-        <div className="px-4 py-3.5 bg-[#161b22] border-b border-slate-800 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-red-500/80 inline-block" />
+        <div className="px-3 sm:px-4 py-3 bg-[#161b22] border-b border-slate-800 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="hidden sm:flex items-center gap-1.5">
+              <button 
+                onClick={onClose}
+                className="w-3.5 h-3.5 rounded-full bg-red-500 hover:bg-red-600 transition flex items-center justify-center text-[8px] text-red-950 font-bold"
+                title="Fechar terminal"
+                aria-label="Fechar terminal"
+              >
+                ✕
+              </button>
               <span className="w-3 h-3 rounded-full bg-amber-500/80 inline-block" />
               <span className="w-3 h-3 rounded-full bg-emerald-500/80 inline-block" />
             </div>
-            <div className="flex items-center gap-2 ml-2">
-              <Terminal className="w-4 h-4 text-emerald-400" />
-              <span className="font-bold text-slate-100 text-sm tracking-wide">
-                Terminal de Diagnóstico em Tempo Real
+            <div className="flex items-center gap-1.5 sm:gap-2 sm:ml-2 min-w-0">
+              <Terminal className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span className="font-bold text-slate-100 text-xs sm:text-sm tracking-wide truncate">
+                Diagnóstico em Tempo Real
               </span>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-800 text-emerald-400 text-[10px] font-bold">
+              <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-950/80 border border-emerald-800 text-emerald-400 text-[10px] font-bold">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 AO VIVO
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Botão Copiar Logs */}
             <button
               onClick={handleCopyLogs}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-sans font-semibold text-xs flex items-center gap-1.5 transition active:scale-95"
+              className="min-h-[40px] px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-sans font-semibold text-xs flex items-center gap-1.5 transition active:scale-95"
               title="Copiar relatório completo para colar no chat"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-blue-400" />}
-              <span>{copied ? 'Copiado!' : 'Copiar Logs'}</span>
+              <span className="hidden sm:inline">{copied ? 'Copiado!' : 'Copiar Logs'}</span>
+              <span className="sm:hidden">{copied ? 'OK' : 'Copiar'}</span>
             </button>
 
             {/* Botão Limpar Logs */}
             <button
               onClick={handleClearLogs}
-              className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-red-400 transition"
+              className="min-h-[40px] min-w-[40px] p-2 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-red-400 transition flex items-center justify-center border border-transparent hover:border-slate-700"
               title="Limpar todos os logs"
             >
               <Trash2 className="w-4 h-4" />
             </button>
 
-            {/* Fechar */}
+            {/* Botão Fechar em Grande Destaque */}
             <button
               onClick={onClose}
-              className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition"
+              className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-red-950/50 hover:bg-red-900/80 text-red-200 border border-red-800/80 hover:border-red-600 font-sans font-bold text-xs flex items-center gap-1.5 transition active:scale-95 shadow-sm"
+              title="Fechar painel do terminal"
               aria-label="Fechar terminal de diagnóstico"
             >
-              <X className="w-4 h-4" />
+              <X className="w-4 h-4 text-red-400" />
+              <span>Fechar</span>
             </button>
           </div>
         </div>
@@ -342,10 +367,19 @@ export const DiagnosticConsoleModal: React.FC<DiagnosticConsoleModalProps> = ({
           <div ref={consoleEndRef} />
         </div>
 
-        {/* Rodapé Informativo */}
-        <div className="px-4 py-2 bg-[#161b22] border-t border-slate-800 flex items-center justify-between text-slate-400 text-[11px] font-sans">
-          <span>Armazenando últimos 100 eventos no <code>sessionStorage</code></span>
-          <span className="text-slate-500">Pressione ESC ou Fechar para voltar ao app</span>
+        {/* Rodapé Informativo com Botão Fechar */}
+        <div className="px-3 sm:px-4 py-2.5 bg-[#161b22] border-t border-slate-800 flex items-center justify-between gap-2 text-slate-400 text-[11px] font-sans">
+          <span className="truncate">Armazenando últimos 100 eventos no <code>sessionStorage</code></span>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="hidden sm:inline text-slate-500">ESC ou</span>
+            <button
+              onClick={onClose}
+              className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-100 border border-slate-700 font-bold text-xs flex items-center gap-1.5 transition"
+            >
+              <X className="w-3.5 h-3.5 text-slate-400" />
+              <span>Fechar Terminal</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -1,11 +1,17 @@
 import React, { useState } from 'react';
-import { Sparkles, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Sparkles, ArrowRight, ShieldCheck, Sun, Moon } from 'lucide-react';
 
 interface LoginViewProps {
   onLoginSuccess: (email: string) => void;
+  isDarkMode?: boolean;
+  onToggleDarkMode?: () => void;
 }
 
-export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
+export const LoginView: React.FC<LoginViewProps> = ({
+  onLoginSuccess,
+  isDarkMode = false,
+  onToggleDarkMode,
+}) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -23,7 +29,20 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-900 animate-fadeIn">
+    <div className="min-h-screen relative flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-900 transition-colors animate-fadeIn">
+      {/* Botão de Alternar Tema no Login */}
+      {onToggleDarkMode && (
+        <button
+          type="button"
+          onClick={onToggleDarkMode}
+          className="absolute top-4 right-4 p-2.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 shadow-sm transition hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center justify-center cursor-pointer min-w-[44px] min-h-[44px]"
+          title={isDarkMode ? 'Mudar para Tema Claro' : 'Mudar para Tema Escuro'}
+          aria-label="Alternar tema"
+        >
+          {isDarkMode ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}
+        </button>
+      )}
+
       <div className="w-full max-w-sm bg-white dark:bg-slate-800 rounded-3xl p-6 sm:p-8 border border-slate-100 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-black/40 space-y-6">
         {/* Logo e Título */}
         <div className="text-center space-y-2">

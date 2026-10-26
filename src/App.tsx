@@ -23,6 +23,7 @@ import { DiagnosticConsoleModal } from './components/DiagnosticConsoleModal.tsx'
 import { LoginView } from './components/LoginView.tsx';
 import { ToastContainer, ToastItem } from './components/ToastContainer.tsx';
 import { subscribeLogs } from './services/logger.ts';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -42,14 +43,13 @@ export default function App() {
     return null;
   });
 
-  // Tema Escuro / Claro
+  // Tema Escuro / Claro (Tema Claro é o padrão oficial)
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
-      return (
-        localStorage.getItem('theme') === 'dark' ||
-        (!('theme' in localStorage) &&
-          window.matchMedia('(prefers-color-scheme: dark)').matches)
-      );
+      const stored = localStorage.getItem('theme');
+      if (stored === 'dark') return true;
+      if (stored === 'light') return false;
+      return false; // Tema Claro é o padrão oficial do ERP
     }
     return false;
   });
@@ -78,9 +78,11 @@ export default function App() {
   useEffect(() => {
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
       localStorage.setItem('theme', 'dark');
     } else {
       document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
       localStorage.setItem('theme', 'light');
     }
   }, [isDarkMode]);
@@ -223,7 +225,13 @@ export default function App() {
 
   // Se o usuário não está autenticado e não usou autostart
   if (!currentUser) {
-    return <LoginView onLoginSuccess={handleLoginSuccess} />;
+    return (
+      <LoginView
+        onLoginSuccess={handleLoginSuccess}
+        isDarkMode={isDarkMode}
+        onToggleDarkMode={() => setIsDarkMode((prev) => !prev)}
+      />
+    );
   }
 
   // Contagem de itens com estoque baixo
@@ -244,37 +252,66 @@ export default function App() {
         installPrompt={installPromptEvent ? triggerPWAInstall : null}
       />
 
-      {/* Conteúdo Principal com Container Mobile-First Centralizado */}
-      <main className="flex-1 max-w-xl w-full mx-auto px-4 pt-4 pb-20">
-        {activeTab === 'inicio' && (
-          <HomeDashboard
-            products={products}
-            onOpenScan={() => setActiveTab('camera')}
-            onOpenStock={() => setActiveTab('estoque')}
-            onSelectProduct={(prod) => setSelectedProduct(prod)}
-            onQuickUpdateStock={handleQuickUpdateStock}
-          />
-        )}
+      {/* Conteúdo Principal com Container Mobile-First Centralizado e Animações Fluidas */}
+      <main className="flex-1 max-w-xl w-full mx-auto px-4 pt-4 pb-20 overflow-x-hidden">
+        <AnimatePresence mode="wait">
+          {activeTab === 'inicio' && (
+            <motion.div
+              key="inicio"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full"
+            >
+              <HomeDashboard
+                products={products}
+                onOpenScan={() => setActiveTab('camera')}
+                onOpenStock={() => setActiveTab('estoque')}
+                onSelectProduct={(prod) => setSelectedProduct(prod)}
+                onQuickUpdateStock={handleQuickUpdateStock}
+              />
+            </motion.div>
+          )}
 
-        {activeTab === 'camera' && (
-          <CameraWizard
-            onSaveProduct={handleSaveProduct}
-            onCancel={() => setActiveTab('inicio')}
-            onSuccess={() => {
-              setActiveTab('estoque');
-              addToast('Produto cadastrado com sucesso!', 'success');
-            }}
-          />
-        )}
+          {activeTab === 'camera' && (
+            <motion.div
+              key="camera"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full"
+            >
+              <CameraWizard
+                onSaveProduct={handleSaveProduct}
+                onCancel={() => setActiveTab('inicio')}
+                onSuccess={() => {
+                  setActiveTab('estoque');
+                  addToast('Produto cadastrado com sucesso!', 'success');
+                }}
+              />
+            </motion.div>
+          )}
 
-        {activeTab === 'estoque' && (
-          <StockList
-            products={products}
-            onSelectProduct={(prod) => setSelectedProduct(prod)}
-            onQuickUpdateStock={handleQuickUpdateStock}
-            onOpenAddNew={() => setActiveTab('camera')}
-          />
-        )}
+          {activeTab === 'estoque' && (
+            <motion.div
+              key="estoque"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full"
+            >
+              <StockList
+                products={products}
+                onSelectProduct={(prod) => setSelectedProduct(prod)}
+                onQuickUpdateStock={handleQuickUpdateStock}
+                onOpenAddNew={() => setActiveTab('camera')}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
 
       {/* Bottom Navigation Fixa (3 Abas estilo Android) */}
@@ -299,6 +336,8 @@ export default function App() {
         onDataChanged={loadProducts}
         onShowToast={addToast}
         installPrompt={installPromptEvent ? triggerPWAInstall : null}
+        isDarkMode={isDarkMode}
+        onToggleDarkMode={() => setIsDarkMode((prev) => !prev)}
       />
 
       {/* Console de Diagnóstico em Tempo Real */}

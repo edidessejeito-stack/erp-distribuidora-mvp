@@ -17,6 +17,17 @@
           event.preventDefault();
         }
       }, true);
+      // Inicialização instantânea do tema (Claro por padrão)
+      (function() {
+        try {
+          var stored = localStorage.getItem('theme');
+          if (stored === 'dark') {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch(e) {}
+      })();
       window.addEventListener('error', function(event) {
         if (
           (event.message && (event.message.includes('WebSocket') || event.message.includes('[vite]'))) ||

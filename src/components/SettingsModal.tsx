@@ -10,6 +10,8 @@ import {
   Check,
   ShieldCheck,
   Smartphone,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import {
   getClientGeminiApiKey,
@@ -32,6 +34,8 @@ interface SettingsModalProps {
   onDataChanged: () => void;
   onShowToast: (message: string, type?: 'success' | 'warning' | 'info') => void;
   installPrompt: (() => Promise<boolean>) | null;
+  isDarkMode?: boolean;
+  onToggleDarkMode?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -40,6 +44,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onDataChanged,
   onShowToast,
   installPrompt,
+  isDarkMode = false,
+  onToggleDarkMode,
 }) => {
   if (!isOpen) return null;
 
@@ -191,7 +197,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          {/* SEÇÃO 2: Backup e Restauração Local (IndexedDB JSON) */}
+          {/* SEÇÃO 2: Aparência e Tema do Sistema */}
+          <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                <Sun className="w-3.5 h-3.5 text-amber-500" />
+                Tema do Sistema
+              </label>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                {isDarkMode ? 'Tema Escuro Ativo' : 'Tema Claro Ativo (Padrão)'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Escolha a aparência visual do aplicativo:
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (isDarkMode && onToggleDarkMode) onToggleDarkMode();
+                }}
+                className={`py-2.5 px-3 rounded-2xl border text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer min-h-[44px] ${
+                  !isDarkMode
+                    ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-xs dark:bg-blue-950/60 dark:text-blue-200'
+                    : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}
+              >
+                <Sun className="w-4 h-4 text-amber-500" />
+                <span>Tema Claro {!isDarkMode ? '✓' : ''}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isDarkMode && onToggleDarkMode) onToggleDarkMode();
+                }}
+                className={`py-2.5 px-3 rounded-2xl border text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer min-h-[44px] ${
+                  isDarkMode
+                    ? 'bg-slate-800 border-blue-500 text-blue-400 shadow-xs'
+                    : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}
+              >
+                <Moon className="w-4 h-4 text-indigo-400" />
+                <span>Tema Escuro {isDarkMode ? '✓' : ''}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* SEÇÃO 3: Backup e Restauração Local (IndexedDB JSON) */}
           <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
             <label className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
