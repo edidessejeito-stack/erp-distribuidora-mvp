@@ -1,12 +1,15 @@
 import React from 'react';
-import { Sparkles, Sun, Moon, Settings, Bell, BellOff, Download } from 'lucide-react';
+import { Sparkles, Sun, Moon, Settings, Bell, BellOff, Download, Terminal } from 'lucide-react';
 import { getNotificationPermission, requestNotificationPermission } from '../services/notifications.ts';
 
 interface HeaderProps {
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
   onOpenSettings: () => void;
+  onOpenDiagnostics: () => void;
   lowStockCount: number;
+  logCount: number;
+  errorCount: number;
   onSelectTab: (tab: 'inicio' | 'camera' | 'estoque') => void;
   installPrompt: (() => Promise<boolean>) | null;
 }
@@ -15,7 +18,10 @@ export const Header: React.FC<HeaderProps> = ({
   isDarkMode,
   onToggleDarkMode,
   onOpenSettings,
+  onOpenDiagnostics,
   lowStockCount,
+  logCount,
+  errorCount,
   onSelectTab,
   installPrompt,
 }) => {
@@ -88,6 +94,25 @@ export const Header: React.FC<HeaderProps> = ({
             aria-label="Alternar tema"
           >
             {isDarkMode ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}
+          </button>
+
+          {/* Diagnostic Console Button */}
+          <button
+            onClick={onOpenDiagnostics}
+            className="relative p-2.5 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition min-w-[40px] min-h-[40px] flex items-center justify-center"
+            title="Terminal de Diagnóstico em Tempo Real"
+            aria-label="Abrir terminal de diagnóstico"
+          >
+            <Terminal className="w-5 h-5 text-emerald-500" />
+            {errorCount > 0 ? (
+              <span className="absolute top-1.5 right-1.5 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white shadow">
+                {errorCount}
+              </span>
+            ) : logCount > 0 ? (
+              <span className="absolute top-1.5 right-1.5 flex h-3.5 min-w-[14px] px-1 items-center justify-center rounded-full bg-slate-700 dark:bg-slate-600 text-[9px] font-bold text-white">
+                {logCount > 99 ? '99+' : logCount}
+              </span>
+            ) : null}
           </button>
 
           {/* Settings Button */}

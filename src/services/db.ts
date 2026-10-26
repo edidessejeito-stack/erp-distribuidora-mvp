@@ -1,4 +1,5 @@
 import { Product, ERPBackup } from '../types/index.ts';
+import { addLog } from './logger.ts';
 
 const DB_NAME = 'DistribuidoraERP_DB';
 const DB_VERSION = 1;
@@ -215,9 +216,11 @@ async function checkAndSeedDatabase(db: IDBDatabase): Promise<void> {
           writeStore.put(prod);
         });
         writeTx.oncomplete = () => {
+          addLog('DB', 'success', `Seed inicial concluído com ${INITIAL_PRODUCTS_SEED.length} produtos padrão.`);
           resolve();
         };
         writeTx.onerror = () => {
+          addLog('DB', 'error', 'Falha ao executar seed inicial no IndexedDB.');
           resolve();
         };
       } else {
@@ -226,6 +229,7 @@ async function checkAndSeedDatabase(db: IDBDatabase): Promise<void> {
     };
 
     countRequest.onerror = () => {
+      addLog('DB', 'error', 'Falha ao contar produtos no IndexedDB.');
       resolve();
     };
   });
@@ -239,9 +243,12 @@ export async function getAllProducts(): Promise<Product[]> {
     const request = store.getAll();
 
     request.onsuccess = () => {
-      resolve(request.result || []);
+      const prods = request.result || [];
+      addLog('DB', 'info', `Carregados ${prods.length} produtos do IndexedDB.`);
+      resolve(prods);
     };
     request.onerror = () => {
+      addLog('DB', 'error', 'Erro ao listar produtos do IndexedDB.');
       reject(request.error);
     };
   });
@@ -274,9 +281,11 @@ export async function saveProduct(product: Product): Promise<void> {
     });
 
     request.onsuccess = () => {
+      addLog('DB', 'success', `Produto "${product.name}" salvo no IndexedDB com sucesso.`, { id: product.id, stock: product.stock, price: product.salePrice });
       resolve();
     };
     request.onerror = () => {
+      addLog('DB', 'error', `Falha ao salvar produto "${product.name}" no IndexedDB:`, request.error);
       reject(request.error);
     };
   });
@@ -292,6 +301,7 @@ export async function updateProductStock(id: string, delta: number): Promise<Pro
     getReq.onsuccess = () => {
       const prod = getReq.result as Product | undefined;
       if (!prod) {
+        addLog('DB', 'error', `Produto ${id} não encontrado para atualizar estoque.`);
         reject(new Error(`Produto ${id} não encontrado`));
         return;
       }
@@ -302,11 +312,20 @@ export async function updateProductStock(id: string, delta: number): Promise<Pro
         updatedAt: new Date().toISOString(),
       };
       const putReq = store.put(updated);
-      putReq.onsuccess = () => resolve(updated);
-      putReq.onerror = () => reject(putReq.error);
+      putReq.onsuccess = () => {
+        addLog('DB', 'info', `Estoque atualizado: "${prod.name}" ${prod.stock} -> ${newStock} (${delta > 0 ? '+' : ''}${delta})`);
+        resolve(updated);
+      };
+      putReq.onerror = () => {
+        addLog('DB', 'error', `Erro ao gravar novo estoque de "${prod.name}":`, putReq.error);
+        reject(putReq.error);
+      };
     };
 
-    getReq.onerror = () => reject(getReq.error);
+    getReq.onerror = () => {
+      addLog('DB', 'error', `Erro ao buscar produto ${id} no IndexedDB:`, getReq.error);
+      reject(getReq.error);
+    };
   });
 }
 

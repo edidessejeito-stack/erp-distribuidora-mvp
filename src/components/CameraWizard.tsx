@@ -17,6 +17,7 @@ import { Product, ProductCategory, UnitType, PackageType } from '../types/index.
 import { compressImage } from '../utils/imageCompressor.ts';
 import { analyzeProductPhoto } from '../services/geminiClient.ts';
 import { calculateMargin, generateEAN13, formatCurrency } from '../utils/calculations.ts';
+import { addLog } from '../services/logger.ts';
 
 interface CameraWizardProps {
   onSaveProduct: (product: Product) => Promise<void>;
@@ -65,6 +66,8 @@ export const CameraWizard: React.FC<CameraWizardProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    addLog('IMAGEM', 'info', `Arquivo recebido no input: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+
     try {
       setAnalyzing(true);
       setAnalyzingMessage('Otimizando imagem para alta velocidade...');
@@ -79,10 +82,14 @@ export const CameraWizard: React.FC<CameraWizardProps> = ({
         setDetectedProducts(result.products);
         setActiveItemIndex(0);
         setStep(2); // Avança para o Passo 2: Revisão
+      } else {
+        addLog('IA', 'warn', 'Nenhum produto retornado pela IA, iniciando modo manual.');
+        initiateManualCreation();
       }
-    } catch (err) {
-      console.error('Erro na captura:', err);
-      // Fallback manual
+    } catch (err: unknown) {
+      const error = err as Error;
+      addLog('IA', 'error', `Erro crítico na captura/análise de foto: ${error.message}`);
+      // Fallback manual garantido
       initiateManualCreation();
     } finally {
       setAnalyzing(false);

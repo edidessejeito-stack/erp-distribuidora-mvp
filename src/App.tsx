@@ -19,8 +19,10 @@ import { CameraWizard } from './components/CameraWizard.tsx';
 import { StockList } from './components/StockList.tsx';
 import { ProductBottomSheet } from './components/ProductBottomSheet.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
+import { DiagnosticConsoleModal } from './components/DiagnosticConsoleModal.tsx';
 import { LoginView } from './components/LoginView.tsx';
 import { ToastContainer, ToastItem } from './components/ToastContainer.tsx';
+import { subscribeLogs } from './services/logger.ts';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -57,8 +59,20 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'inicio' | 'camera' | 'estoque'>('inicio');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
+  const [logCount, setLogCount] = useState(0);
+  const [errorCount, setErrorCount] = useState(0);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
+
+  // Escuta logs para manter contadores atualizados em tempo real no Header
+  useEffect(() => {
+    const unsubscribe = subscribeLogs((logs) => {
+      setLogCount(logs.length);
+      setErrorCount(logs.filter((l) => l.level === 'error').length);
+    });
+    return unsubscribe;
+  }, []);
 
   // Efeito de Tema
   useEffect(() => {
@@ -222,7 +236,10 @@ export default function App() {
         isDarkMode={isDarkMode}
         onToggleDarkMode={() => setIsDarkMode((prev) => !prev)}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
         lowStockCount={lowStockCount}
+        logCount={logCount}
+        errorCount={errorCount}
         onSelectTab={setActiveTab}
         installPrompt={installPromptEvent ? triggerPWAInstall : null}
       />
@@ -282,6 +299,13 @@ export default function App() {
         onDataChanged={loadProducts}
         onShowToast={addToast}
         installPrompt={installPromptEvent ? triggerPWAInstall : null}
+      />
+
+      {/* Console de Diagnóstico em Tempo Real */}
+      <DiagnosticConsoleModal
+        isOpen={isDiagnosticsOpen}
+        onClose={() => setIsDiagnosticsOpen(false)}
+        onShowToast={addToast}
       />
 
       {/* Container de Toasts para Notificações In-App */}
