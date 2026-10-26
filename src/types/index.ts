@@ -79,37 +79,3 @@ export interface NotificationAlert {
   timestamp: number;
   read: boolean;
 }
-
-export interface Operator {
-  id: string;
-  email: string;
-  name: string;
-  role: 'admin' | 'gerente' | 'operador';
-  createdAt: string;
-}
-
-export interface StockMovement {
-  id: string;
-  productId: string;
-  productName: string;
-  type: 'entrada' | 'saida' | 'ajuste' | 'inventario';
-  delta: number;
-  finalStock: number;
-  reason?: string;
-  operatorEmail?: string;
-  createdAt: string;
-}
-
-export interface DatabaseStatus {
-  connected: boolean;
-  dialect: string;
-  host: string;
-  port: number;
-  database: string;
-  user: string;
-  mode: 'mysql' | 'memory_fallback';
-  lastError?: string;
-  totalProducts?: number;
-  checkedAt: string;
-}
-

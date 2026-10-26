@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import { Sparkles, ArrowRight, ShieldCheck, Sun, Moon } from 'lucide-react';
 
-import { loginOperator } from '../services/db.ts';
-
 interface LoginViewProps {
   onLoginSuccess: (email: string) => void;
   isDarkMode?: boolean;
@@ -16,33 +14,19 @@ export const LoginView: React.FC<LoginViewProps> = ({
 }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
-
-  const executeLogin = async (targetEmail: string, targetPass?: string) => {
-    setLoading(true);
-    setErrorMsg('');
-    try {
-      await loginOperator(targetEmail, targetPass);
-      onLoginSuccess(targetEmail);
-    } catch {
-      // Mesmo com erro de rede pontual, autoriza para modo offline resiliente
-      onLoginSuccess(targetEmail);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const target = email.trim() || 'admin@distribuidora.com.br';
-    executeLogin(target, password);
+    if (email.trim()) {
+      onLoginSuccess(email.trim());
+    } else {
+      onLoginSuccess('admin@distribuidora.com.br');
+    }
   };
 
   const handleDemoAccess = () => {
-    executeLogin('gerente@distribuidora.com.br');
+    onLoginSuccess('gerente@distribuidora.com.br');
   };
-
 
   return (
     <div className="min-h-screen relative flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-900 transition-colors animate-fadeIn">
@@ -101,16 +85,11 @@ export const LoginView: React.FC<LoginViewProps> = ({
             />
           </div>
 
-          {errorMsg && (
-            <p className="text-xs text-red-500 text-center font-medium">{errorMsg}</p>
-          )}
-
           <button
             type="submit"
-            disabled={loading}
-            className="w-full min-h-[48px] rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition flex items-center justify-center gap-2 shadow-xs cursor-pointer disabled:opacity-60"
+            className="w-full min-h-[48px] rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs transition flex items-center justify-center gap-2 shadow-xs cursor-pointer"
           >
-            <span>{loading ? 'Conectando ao MySQL...' : 'Entrar no Sistema'}</span>
+            <span>Entrar no Sistema</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
@@ -126,8 +105,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
         {/* Atalho de Acesso Rápido Demo (1 Clique) */}
         <button
           onClick={handleDemoAccess}
-          disabled={loading}
-          className="w-full min-h-[48px] rounded-xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-purple-500/10 hover:from-blue-500/20 hover:via-indigo-500/20 hover:to-purple-500/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900/60 font-semibold text-xs flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-60"
+          className="w-full min-h-[48px] rounded-xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-purple-500/10 hover:from-blue-500/20 hover:via-indigo-500/20 hover:to-purple-500/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900/60 font-semibold text-xs flex items-center justify-center gap-2 transition cursor-pointer"
         >
           <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400" />
           <span>Acesso Rápido Demo (1 Clique)</span>
@@ -136,7 +114,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
         {/* Rodapé Seguro */}
         <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400 text-center">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-          <span>Persistência no MySQL 9 & EasyPanel com modo offline</span>
+          <span>Banco local 100% seguro via IndexedDB</span>
         </div>
       </div>
     </div>
