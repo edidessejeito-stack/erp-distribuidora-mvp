@@ -227,6 +227,160 @@ Responda estritamente no esquema JSON solicitado em Português do Brasil.
   }
 });
 
+// Endpoint de Ajuste Inteligente de Estoque Assistido por IA
+app.post('/api/gemini/interpret-stock-adjustment', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { image, textPrompt, productsCatalog } = req.body;
+
+    if (!image && (!textPrompt || !textPrompt.trim())) {
+      res.status(400).json({ error: 'Envie uma foto ou um comando de texto para interpretar o ajuste de estoque.' });
+      return;
+    }
+
+    const customHeaderKey = req.headers['x-gemini-key'] as string | undefined;
+    const apiKey =
+      (customHeaderKey && customHeaderKey.trim()) ||
+      process.env.VITE_GEMINI_API_KEY ||
+      process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      res.status(401).json({
+        error: 'Chave Gemini API não encontrada.',
+      });
+      return;
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+
+    const catalogSummary = Array.isArray(productsCatalog)
+      ? productsCatalog.map((p) => `- ID: ${p.id} | Nome: ${p.name} | Marca: ${p.brand} | EAN: ${p.barcode} | Estoque Atual: ${p.stock} ${p.unit}`).join('\n')
+      : 'Nenhum produto cadastrado previamente.';
+
+    const systemInstruction = `
+Você é um auditor e operador de WMS/ERP especialista em distribuidoras de bebidas e alimentos.
+O usuário quer realizar um ajuste ou contagem de estoque usando foto e/ou comando em linguagem natural.
+
+CATÁLOGO ATUAL DE PRODUTOS NO SISTEMA:
+${catalogSummary}
+
+SUA MISSÃO:
+1. Identifique no catálogo qual produto corresponde à imagem ou ao texto do operador.
+2. Determine a intenção da movimentação:
+   - 'entrada_compra': se recebeu mercadoria, comprou ou deu entrada.
+   - 'saida_venda': se vendeu, entregou ou retirou itens.
+   - 'ajuste_inventario': se foi solicitada alteração direta do saldo total (ex: "ajustar para 200").
+   - 'contagem_diaria': se o operador contou prateleira/estoque físico.
+   - 'perda_avaria': se houve produto quebrado, furado ou vencido.
+3. Calcule:
+   - currentStock: estoque que o produto tem atualmente no catálogo.
+   - proposedNewStock: novo estoque final resultante.
+   - calculatedDelta: a diferença (ex: +50 ou -10).
+4. Redija um motivo comercial profissional obrigatório em Português do Brasil (PT-BR) com justificativa clara (ex: "Entrada de 50 un. conforme comando do operador", "Ajuste de inventário físico: de 120 para 200 un.").
+5. Explique brevemente seu raciocínio.
+
+IMPORTANTE: Responda estritamente no esquema JSON abaixo em Português do Brasil.
+`;
+
+    const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
+
+    if (image) {
+      const cleanImage = image.includes('base64,') ? image.split('base64,')[1] : image;
+      parts.push({
+        inlineData: {
+          mimeType: 'image/jpeg',
+          data: cleanImage,
+        },
+      });
+    }
+
+    const userMessage = textPrompt && textPrompt.trim()
+      ? `Comando do Operador: "${textPrompt.trim()}"`
+      : 'Identifique o produto da foto, estime a quantidade presente ou proponha o ajuste de contagem de estoque.';
+
+    parts.push({ text: userMessage });
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: { parts },
+      config: {
+        systemInstruction,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            matchedProductId: {
+              type: Type.STRING,
+              description: 'ID exato do produto no catálogo identificado',
+            },
+            matchedProductName: {
+              type: Type.STRING,
+              description: 'Nome do produto identificado',
+            },
+            currentStock: {
+              type: Type.INTEGER,
+              description: 'Estoque atual anterior',
+            },
+            proposedNewStock: {
+              type: Type.INTEGER,
+              description: 'Novo estoque proposto após a operação',
+            },
+            calculatedDelta: {
+              type: Type.INTEGER,
+              description: 'Delta calculado (+ ou -)',
+            },
+            movementType: {
+              type: Type.STRING,
+              description: 'Tipo da movimentação: entrada_compra, saida_venda, ajuste_inventario, contagem_diaria ou perda_avaria',
+            },
+            typeLabel: {
+              type: Type.STRING,
+              description: 'Nome legível em PT-BR (ex: Entrada por Compra, Ajuste de Inventário)',
+            },
+            proposedReason: {
+              type: Type.STRING,
+              description: 'Motivo / justificativa detalhada e profissional da movimentação',
+            },
+            aiExplanation: {
+              type: Type.STRING,
+              description: 'Explicação do raciocínio da IA para o operador',
+            },
+            confidence: {
+              type: Type.STRING,
+              description: 'alta, media ou baixa',
+            },
+          },
+          required: [
+            'matchedProductId',
+            'matchedProductName',
+            'proposedNewStock',
+            'calculatedDelta',
+            'movementType',
+            'proposedReason',
+          ],
+        },
+      },
+    });
+
+    const outputText = response.text || '{}';
+    const parsed = JSON.parse(outputText);
+    res.json(parsed);
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    console.error('Erro na interpretação de movimentação de estoque:', err);
+    res.status(500).json({
+      error: 'Falha ao interpretar ajuste de estoque com IA.',
+      details: err.message || 'Erro interno do servidor',
+    });
+  }
+});
+
 // Inicialização do servidor com Vite Middleware (Dev) ou Arquivos Estáticos (Prod)
 async function startServer() {
   const isProduction = process.env.NODE_ENV === 'production';

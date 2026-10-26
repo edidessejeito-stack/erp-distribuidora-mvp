@@ -229,7 +229,7 @@ export const DiagnosticConsoleModal: React.FC<DiagnosticConsoleModalProps> = ({
               }`}
             >
               <Database className="w-3 h-3 text-indigo-300" />
-              IndexedDB ({dbCount})
+              MySQL / DB ({dbCount})
             </button>
 
             <button

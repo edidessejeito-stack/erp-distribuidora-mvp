@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Product } from './types/index.ts';
+import { Product, StockMovement, StockAdjustmentAIProposal, MovementType } from './types/index.ts';
 import {
   getAllProducts,
   saveProduct,
   deleteProduct,
   updateProductStock,
+  getAllMovements,
+  recordStockMovement,
 } from './services/db.ts';
 import {
   subscribeToAlerts,
@@ -13,13 +15,16 @@ import {
 import { isLowStock } from './utils/calculations.ts';
 
 import { Header } from './components/Header.tsx';
-import { BottomNav } from './components/BottomNav.tsx';
+import { BottomNav, AppTab } from './components/BottomNav.tsx';
 import { HomeDashboard } from './components/HomeDashboard.tsx';
 import { CameraWizard } from './components/CameraWizard.tsx';
 import { StockList } from './components/StockList.tsx';
+import { StockMovementsView } from './components/StockMovementsView.tsx';
 import { ProductBottomSheet } from './components/ProductBottomSheet.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
 import { DiagnosticConsoleModal } from './components/DiagnosticConsoleModal.tsx';
+import { AIStockAdjustmentModal } from './components/AIStockAdjustmentModal.tsx';
+import { ManualMovementModal } from './components/ManualMovementModal.tsx';
 import { LoginView } from './components/LoginView.tsx';
 import { ToastContainer, ToastItem } from './components/ToastContainer.tsx';
 import { subscribeLogs } from './services/logger.ts';
@@ -49,15 +54,24 @@ export default function App() {
       const stored = localStorage.getItem('theme');
       if (stored === 'dark') return true;
       if (stored === 'light') return false;
-      return false; // Tema Claro é o padrão oficial do ERP
+      return false; // Tema Claro padrão
     }
     return false;
   });
 
-  // Produtos e Estado da Interface
+  // Produtos e Movimentações
   const [products, setProducts] = useState<Product[]>([]);
-  const [activeTab, setActiveTab] = useState<'inicio' | 'camera' | 'estoque'>('inicio');
+  const [movements, setMovements] = useState<StockMovement[]>([]);
+  const [activeTab, setActiveTab] = useState<AppTab>('inicio');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+
+  // Modais de Movimentação e Ajuste
+  const [isAIAdjustmentOpen, setIsAIAdjustmentOpen] = useState(false);
+  const [aiAdjustmentProduct, setAiAdjustmentProduct] = useState<Product | null>(null);
+  const [isManualMovementOpen, setIsManualMovementOpen] = useState(false);
+  const [manualMovementProduct, setManualMovementProduct] = useState<Product | null>(null);
+
+  // Modais do Sistema
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
   const [logCount, setLogCount] = useState(0);
@@ -87,7 +101,7 @@ export default function App() {
     }
   }, [isDarkMode]);
 
-  // Carregar produtos do IndexedDB
+  // Carregar produtos e movimentações do IndexedDB
   const loadProducts = useCallback(async () => {
     try {
       const items = await getAllProducts();
@@ -97,88 +111,60 @@ export default function App() {
     }
   }, []);
 
+  const loadMovements = useCallback(async () => {
+    try {
+      const movs = await getAllMovements();
+      setMovements(movs);
+    } catch (err) {
+      console.error('Erro ao carregar movimentações do IndexedDB:', err);
+    }
+  }, []);
+
   useEffect(() => {
     loadProducts();
-  }, [loadProducts]);
+    loadMovements();
+  }, [loadProducts, loadMovements]);
 
-  // Escuta alertas de estoque baixo e adiciona Toast
+  // Escuta alertas de reposição periódicos
   useEffect(() => {
     const unsubscribe = subscribeToAlerts((alert) => {
-      addToast(
-        `⚠️ Estoque Baixo: ${alert.productName} (${alert.currentStock}/${alert.minStock})`,
-        'warning'
-      );
+      addToast(`Atenção: Estoque de "${alert.productName}" está baixo (${alert.currentStock}/${alert.minStock})`, 'warning');
     });
     return unsubscribe;
   }, []);
 
   // Captura evento de instalação PWA
   useEffect(() => {
-    const handleBeforeInstall = (e: Event) => {
+    const handler = (e: Event) => {
       e.preventDefault();
       setInstallPromptEvent(e as BeforeInstallPromptEvent);
     };
-    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
-    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
   const triggerPWAInstall = async (): Promise<boolean> => {
     if (!installPromptEvent) return false;
     await installPromptEvent.prompt();
-    const { outcome } = await installPromptEvent.userChoice;
-    if (outcome === 'accepted') {
-      setInstallPromptEvent(null);
-      addToast('Aplicativo instalado com sucesso!', 'success');
-      return true;
-    }
-    return false;
+    const choice = await installPromptEvent.userChoice;
+    setInstallPromptEvent(null);
+    return choice.outcome === 'accepted';
   };
 
   const addToast = (message: string, type: 'success' | 'warning' | 'info' = 'info') => {
-    const id = `toast-${Date.now()}-${Math.random()}`;
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4500);
+    const newToast: ToastItem = {
+      id: `toast-${Date.now()}-${Math.random()}`,
+      message,
+      type,
+    };
+    setToasts((prev) => [...prev, newToast]);
   };
 
   const dismissToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // UI Otimista: Atualização Rápida de Estoque (+ / -)
-  const handleQuickUpdateStock = async (productId: string, delta: number) => {
-    // 1. Atualização Otimista no estado React (0ms lag)
-    let updatedTarget: Product | null = null;
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id === productId) {
-          const newStock = Math.max(0, p.stock + delta);
-          const updated = { ...p, stock: newStock, updatedAt: new Date().toISOString() };
-          updatedTarget = updated;
-          return updated;
-        }
-        return p;
-      })
-    );
-
-    // 2. Persistência assíncrona em segundo plano no IndexedDB
-    try {
-      const persisted = await updateProductStock(productId, delta);
-      // Checa se atingiu ou caiu abaixo do estoque mínimo
-      if (isLowStock(persisted.stock, persisted.minStock)) {
-        triggerLowStockNotification(persisted);
-      }
-    } catch (err) {
-      console.error('Falha ao atualizar estoque no IndexedDB:', err);
-      // Reverte se falhou
-      loadProducts();
-    }
-  };
-
-  // Salvar Produto (Novo ou Editado)
+  // Salvar Produto (Novo ou Editado - Somente dados cadastrais e estoque mínimo)
   const handleSaveProduct = async (productToSave: Product) => {
     // UI Otimista
     setProducts((prev) => {
@@ -205,7 +191,6 @@ export default function App() {
 
   // Excluir Produto
   const handleDeleteProduct = async (productId: string) => {
-    // UI Otimista
     setProducts((prev) => prev.filter((p) => p.id !== productId));
     try {
       await deleteProduct(productId);
@@ -216,6 +201,90 @@ export default function App() {
     }
   };
 
+  // Confirmação de Ajuste Assistido por IA (Regra de Ouro)
+  const handleConfirmAIAdjustment = async (proposal: StockAdjustmentAIProposal) => {
+    try {
+      const result = await recordStockMovement({
+        productId: proposal.matchedProductId,
+        type: proposal.movementType,
+        delta: proposal.calculatedDelta,
+        operator: currentUser || 'Operador',
+        reason: proposal.proposedReason,
+        auditPayload: {
+          origin: 'ia_assistida',
+          photoAttached: !!proposal.sourceImage,
+          aiPrompt: proposal.sourcePrompt,
+          aiInterpretation: proposal.aiExplanation,
+          extraDetails: {
+            confidence: proposal.rawConfidence,
+          },
+        },
+      });
+
+      // Atualiza produtos e movimentações
+      setProducts((prev) =>
+        prev.map((p) => (p.id === result.product.id ? result.product : p))
+      );
+      setMovements((prev) => [result.movement, ...prev]);
+
+      const deltaFormatted = proposal.calculatedDelta > 0 ? `+${proposal.calculatedDelta}` : proposal.calculatedDelta;
+      addToast(
+        `Movimentação registrada com sucesso (${deltaFormatted})! Kardex atualizado.`,
+        'success'
+      );
+
+      if (isLowStock(result.product.stock, result.product.minStock)) {
+        triggerLowStockNotification(result.product);
+      }
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      console.error('Erro ao confirmar ajuste de IA:', e);
+      addToast(e.message || 'Falha ao gravar movimentação.', 'warning');
+      throw err;
+    }
+  };
+
+  // Confirmação de Movimentação Manual com Justificativa
+  const handleConfirmManualMovement = async (params: {
+    productId: string;
+    type: MovementType;
+    delta?: number;
+    targetStock?: number;
+    reason: string;
+    operator: string;
+  }) => {
+    try {
+      const result = await recordStockMovement({
+        productId: params.productId,
+        type: params.type,
+        delta: params.delta,
+        targetStock: params.targetStock,
+        operator: params.operator,
+        reason: params.reason,
+        auditPayload: {
+          origin: 'manual',
+        },
+      });
+
+      setProducts((prev) =>
+        prev.map((p) => (p.id === result.product.id ? result.product : p))
+      );
+      setMovements((prev) => [result.movement, ...prev]);
+
+      const deltaStr = result.movement.delta >= 0 ? `+${result.movement.delta}` : `${result.movement.delta}`;
+      addToast(`Movimentação de estoque gravada (${deltaStr} un)!`, 'success');
+
+      if (isLowStock(result.product.stock, result.product.minStock)) {
+        triggerLowStockNotification(result.product);
+      }
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      console.error('Erro ao gravar movimentação:', e);
+      addToast(e.message || 'Erro ao registrar movimentação.', 'warning');
+      throw err;
+    }
+  };
+
   // Login handler
   const handleLoginSuccess = (email: string) => {
     setCurrentUser(email);
@@ -223,7 +292,6 @@ export default function App() {
     addToast('Bem-vindo ao Distribuidora ERP!', 'success');
   };
 
-  // Se o usuário não está autenticado e não usou autostart
   if (!currentUser) {
     return (
       <LoginView
@@ -234,7 +302,6 @@ export default function App() {
     );
   }
 
-  // Contagem de itens com estoque baixo
   const lowStockCount = products.filter((p) => isLowStock(p.stock, p.minStock)).length;
 
   return (
@@ -252,7 +319,7 @@ export default function App() {
         installPrompt={installPromptEvent ? triggerPWAInstall : null}
       />
 
-      {/* Conteúdo Principal com Container Mobile-First Centralizado e Animações Fluidas */}
+      {/* Conteúdo Principal com Transições Fluidas (AnimatePresence) */}
       <main className="flex-1 max-w-xl w-full mx-auto px-4 pt-4 pb-20 overflow-x-hidden">
         <AnimatePresence mode="wait">
           {activeTab === 'inicio' && (
@@ -268,8 +335,16 @@ export default function App() {
                 products={products}
                 onOpenScan={() => setActiveTab('camera')}
                 onOpenStock={() => setActiveTab('estoque')}
+                onOpenMovements={() => setActiveTab('movimentacoes')}
+                onOpenAIAdjustment={(prod) => {
+                  setAiAdjustmentProduct(prod || null);
+                  setIsAIAdjustmentOpen(true);
+                }}
+                onOpenMovement={(prod) => {
+                  setManualMovementProduct(prod);
+                  setIsManualMovementOpen(true);
+                }}
                 onSelectProduct={(prod) => setSelectedProduct(prod)}
-                onQuickUpdateStock={handleQuickUpdateStock}
               />
             </motion.div>
           )}
@@ -306,34 +381,100 @@ export default function App() {
               <StockList
                 products={products}
                 onSelectProduct={(prod) => setSelectedProduct(prod)}
-                onQuickUpdateStock={handleQuickUpdateStock}
+                onOpenMovement={(prod) => {
+                  setManualMovementProduct(prod);
+                  setIsManualMovementOpen(true);
+                }}
+                onOpenAIAdjustment={(prod) => {
+                  setAiAdjustmentProduct(prod || null);
+                  setIsAIAdjustmentOpen(true);
+                }}
+                onOpenMovementsTab={() => setActiveTab('movimentacoes')}
                 onOpenAddNew={() => setActiveTab('camera')}
+              />
+            </motion.div>
+          )}
+
+          {activeTab === 'movimentacoes' && (
+            <motion.div
+              key="movimentacoes"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full"
+            >
+              <StockMovementsView
+                movements={movements}
+                products={products}
+                currentUserEmail={currentUser || 'Operador'}
+                onOpenManualMovement={(prod) => {
+                  setManualMovementProduct(prod || null);
+                  setIsManualMovementOpen(true);
+                }}
+                onOpenAIAdjustment={(prod) => {
+                  setAiAdjustmentProduct(prod || null);
+                  setIsAIAdjustmentOpen(true);
+                }}
               />
             </motion.div>
           )}
         </AnimatePresence>
       </main>
 
-      {/* Bottom Navigation Fixa (3 Abas estilo Android) */}
+      {/* Bottom Navigation Fixa (4 Abas estilo Android Material 3) */}
       <BottomNav
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         lowStockCount={lowStockCount}
       />
 
-      {/* Bottom Sheet de Edição Completa 360° */}
+      {/* Bottom Sheet de Edição de Dados Cadastrais (Estoque Protegido) */}
       <ProductBottomSheet
         product={selectedProduct}
         onClose={() => setSelectedProduct(null)}
         onSave={handleSaveProduct}
         onDelete={handleDeleteProduct}
+        onOpenMovement={(prod) => {
+          setManualMovementProduct(prod);
+          setIsManualMovementOpen(true);
+        }}
+      />
+
+      {/* Modal de Ajuste de Estoque com IA e Pré-Visualização Obrigatória */}
+      <AIStockAdjustmentModal
+        isOpen={isAIAdjustmentOpen}
+        onClose={() => {
+          setIsAIAdjustmentOpen(false);
+          setAiAdjustmentProduct(null);
+        }}
+        products={products}
+        currentUserEmail={currentUser || 'Operador'}
+        preselectedProduct={aiAdjustmentProduct}
+        onConfirmAdjustment={handleConfirmAIAdjustment}
+      />
+
+      {/* Modal de Movimentação Manual Formal com Motivo Obrigatório */}
+      <ManualMovementModal
+        isOpen={isManualMovementOpen}
+        onClose={() => {
+          setIsManualMovementOpen(false);
+          setManualMovementProduct(null);
+        }}
+        products={products}
+        currentUserEmail={currentUser || 'Operador'}
+        preselectedProduct={manualMovementProduct}
+        onConfirmMovement={handleConfirmManualMovement}
       />
 
       {/* Modal de Configurações (API Key, Backup JSON e PWA) */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        onDataChanged={loadProducts}
+        onDataChanged={() => {
+          loadProducts();
+          loadMovements();
+        }}
         onShowToast={addToast}
         installPrompt={installPromptEvent ? triggerPWAInstall : null}
         isDarkMode={isDarkMode}

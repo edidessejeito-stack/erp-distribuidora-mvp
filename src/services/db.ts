@@ -1,10 +1,30 @@
-import { Product, ERPBackup } from '../types/index.ts';
+import { Product, ERPBackup, StockMovement, MovementType, MovementAuditPayload } from '../types/index.ts';
 import { addLog } from './logger.ts';
 
 const DB_NAME = 'DistribuidoraERP_DB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_PRODUCTS = 'products';
+const STORE_MOVEMENTS = 'movements';
 const STORE_SETTINGS = 'settings';
+
+export function formatMovementTypeLabel(type: MovementType): string {
+  switch (type) {
+    case 'entrada_compra':
+      return 'Entrada por Compra';
+    case 'saida_venda':
+      return 'Saída / Venda';
+    case 'ajuste_inventario':
+      return 'Ajuste de Inventário';
+    case 'contagem_diaria':
+      return 'Contagem Diária';
+    case 'perda_avaria':
+      return 'Perda / Avaria';
+    case 'saldo_inicial':
+      return 'Saldo Inicial / Cadastro';
+    default:
+      return 'Ajuste de Estoque';
+  }
+}
 
 // SVGs leves para os produtos demo iniciais
 const svgHeineken = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300"><rect width="300" height="300" rx="36" fill="%23007A33"/><path d="M142 40h16v35l14 25v130h-44v-130l14-25z" fill="%230b4d26"/><path d="M146 36h8v10h-8z" fill="%23c4122f"/><rect x="130" y="130" width="40" height="50" rx="4" fill="%23ffffff"/><polygon points="150,140 153,148 162,148 155,153 158,161 150,156 142,161 145,153 138,148 147,148" fill="%23c4122f"/><text x="150" y="260" font-family="sans-serif" font-weight="bold" font-size="20" fill="%23ffffff" text-anchor="middle">HEINEKEN 600ML</text></svg>`;
@@ -180,6 +200,14 @@ function getDB(): Promise<IDBDatabase> {
         productStore.createIndex('barcode', 'barcode', { unique: false });
       }
 
+      // Cria a tabela de movimentações de estoque (Kardex e Auditoria Imutável)
+      if (!db.objectStoreNames.contains(STORE_MOVEMENTS)) {
+        const movementStore = db.createObjectStore(STORE_MOVEMENTS, { keyPath: 'id' });
+        movementStore.createIndex('productId', 'productId', { unique: false });
+        movementStore.createIndex('timestamp', 'timestamp', { unique: false });
+        movementStore.createIndex('type', 'type', { unique: false });
+      }
+
       // Cria a tabela de configurações e metadados
       if (!db.objectStoreNames.contains(STORE_SETTINGS)) {
         db.createObjectStore(STORE_SETTINGS, { keyPath: 'key' });
@@ -189,7 +217,7 @@ function getDB(): Promise<IDBDatabase> {
     request.onsuccess = (event) => {
       dbInstance = (event.target as IDBOpenDBRequest).result;
 
-      // Checa se precisa inicializar o seed inicial
+      // Checa se precisa inicializar o seed inicial de produtos e movimentações
       checkAndSeedDatabase(dbInstance).then(() => {
         resolve(dbInstance!);
       });
@@ -209,14 +237,43 @@ async function checkAndSeedDatabase(db: IDBDatabase): Promise<void> {
 
     countRequest.onsuccess = () => {
       if (countRequest.result === 0) {
-        // Banco vazio: semeia os 4 produtos reais da distribuidora
-        const writeTx = db.transaction([STORE_PRODUCTS], 'readwrite');
-        const writeStore = writeTx.objectStore(STORE_PRODUCTS);
-        INITIAL_PRODUCTS_SEED.forEach((prod) => {
-          writeStore.put(prod);
+        // Banco vazio: semeia os 4 produtos padrão e o saldo inicial no Kardex
+        const writeTx = db.transaction([STORE_PRODUCTS, STORE_MOVEMENTS], 'readwrite');
+        const writeProductStore = writeTx.objectStore(STORE_PRODUCTS);
+        const writeMovementStore = writeTx.objectStore(STORE_MOVEMENTS);
+
+        INITIAL_PRODUCTS_SEED.forEach((prod, index) => {
+          writeProductStore.put(prod);
+
+          // Cria registro de Saldo Inicial / Implantação correspondente
+          const initialMovement: StockMovement = {
+            id: `seed-mov-${prod.id}`,
+            productId: prod.id,
+            productName: prod.name,
+            productBarcode: prod.barcode,
+            productSku: prod.sku,
+            productImage: prod.image,
+            productUnit: prod.unit,
+            type: 'saldo_inicial',
+            typeLabel: 'Saldo Inicial / Implantação',
+            previousStock: 0,
+            newStock: prod.stock,
+            delta: prod.stock,
+            operator: 'admin@distribuidora.com.br',
+            reason: 'Inventário físico inicial apurado no onboarding do sistema ERP.',
+            auditPayload: {
+              origin: 'importacao',
+              timestamp: new Date(Date.now() - (4 - index) * 3600000).toISOString(),
+              operatorEmail: 'admin@distribuidora.com.br',
+              extraDetails: { seed: true },
+            },
+            timestamp: new Date(Date.now() - (4 - index) * 3600000).toISOString(),
+          };
+          writeMovementStore.put(initialMovement);
         });
+
         writeTx.oncomplete = () => {
-          addLog('DB', 'success', `Seed inicial concluído com ${INITIAL_PRODUCTS_SEED.length} produtos padrão.`);
+          addLog('DB', 'success', `Seed inicial concluído com ${INITIAL_PRODUCTS_SEED.length} produtos e histórico Kardex.`);
           resolve();
         };
         writeTx.onerror = () => {
@@ -224,7 +281,48 @@ async function checkAndSeedDatabase(db: IDBDatabase): Promise<void> {
           resolve();
         };
       } else {
-        resolve();
+        // Verifica se a tabela de movimentações precisa de seed retrospectivo (se migrou de v1 para v2)
+        const movTx = db.transaction([STORE_MOVEMENTS, STORE_PRODUCTS], 'readwrite');
+        const movStore = movTx.objectStore(STORE_MOVEMENTS);
+        const movCountReq = movStore.count();
+
+        movCountReq.onsuccess = () => {
+          if (movCountReq.result === 0) {
+            const prodStore = movTx.objectStore(STORE_PRODUCTS);
+            const getAllReq = prodStore.getAll();
+            getAllReq.onsuccess = () => {
+              const currentProds = (getAllReq.result || []) as Product[];
+              currentProds.forEach((prod, i) => {
+                const initialMovement: StockMovement = {
+                  id: `seed-migrated-${prod.id}`,
+                  productId: prod.id,
+                  productName: prod.name,
+                  productBarcode: prod.barcode,
+                  productSku: prod.sku,
+                  productImage: prod.image,
+                  productUnit: prod.unit,
+                  type: 'saldo_inicial',
+                  typeLabel: 'Saldo Inicial / Implantação',
+                  previousStock: 0,
+                  newStock: prod.stock,
+                  delta: prod.stock,
+                  operator: 'admin@distribuidora.com.br',
+                  reason: 'Saldo inicial apurado na migração para a arquitetura de movimentações rastreadas.',
+                  auditPayload: {
+                    origin: 'importacao',
+                    timestamp: new Date(Date.now() - (currentProds.length - i) * 60000).toISOString(),
+                    operatorEmail: 'admin@distribuidora.com.br',
+                    extraDetails: { migratedFromV1: true },
+                  },
+                  timestamp: new Date(Date.now() - (currentProds.length - i) * 60000).toISOString(),
+                };
+                movStore.put(initialMovement);
+              });
+            };
+          }
+          resolve();
+        };
+        movCountReq.onerror = () => resolve();
       }
     };
 
@@ -291,42 +389,177 @@ export async function saveProduct(product: Product): Promise<void> {
   });
 }
 
-export async function updateProductStock(id: string, delta: number): Promise<Product> {
+export interface RecordMovementParams {
+  productId: string;
+  type: MovementType;
+  delta?: number;
+  targetStock?: number;
+  operator: string;
+  reason: string;
+  auditPayload?: Partial<MovementAuditPayload>;
+}
+
+/**
+ * Registra uma movimentação imutável no Kardex e atualiza o saldo do produto no mesmo bloco transacional
+ */
+export async function recordStockMovement(params: RecordMovementParams): Promise<{ product: Product; movement: StockMovement }> {
+  const { productId, type, delta, targetStock, operator, reason, auditPayload } = params;
+
+  if (!reason || reason.trim().length === 0) {
+    throw new Error('O motivo da movimentação é obrigatório para auditoria e rastreabilidade.');
+  }
+
   const db = await getDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction([STORE_PRODUCTS], 'readwrite');
-    const store = tx.objectStore(STORE_PRODUCTS);
-    const getReq = store.get(id);
+    const tx = db.transaction([STORE_PRODUCTS, STORE_MOVEMENTS], 'readwrite');
+    const prodStore = tx.objectStore(STORE_PRODUCTS);
+    const movStore = tx.objectStore(STORE_MOVEMENTS);
+
+    const getReq = prodStore.get(productId);
 
     getReq.onsuccess = () => {
       const prod = getReq.result as Product | undefined;
       if (!prod) {
-        addLog('DB', 'error', `Produto ${id} não encontrado para atualizar estoque.`);
-        reject(new Error(`Produto ${id} não encontrado`));
+        addLog('DB', 'error', `Produto "${productId}" não encontrado para movimentar estoque.`);
+        reject(new Error(`Produto ID "${productId}" não encontrado no cadastro.`));
         return;
       }
-      const newStock = Math.max(0, prod.stock + delta);
-      const updated: Product = {
+
+      const previousStock = prod.stock;
+      let newStock = previousStock;
+      let calculatedDelta = 0;
+
+      if (targetStock !== undefined) {
+        newStock = Math.max(0, targetStock);
+        calculatedDelta = newStock - previousStock;
+      } else if (delta !== undefined) {
+        calculatedDelta = delta;
+        newStock = Math.max(0, previousStock + delta);
+      }
+
+      const updatedProduct: Product = {
         ...prod,
         stock: newStock,
         updatedAt: new Date().toISOString(),
       };
-      const putReq = store.put(updated);
-      putReq.onsuccess = () => {
-        addLog('DB', 'info', `Estoque atualizado: "${prod.name}" ${prod.stock} -> ${newStock} (${delta > 0 ? '+' : ''}${delta})`);
-        resolve(updated);
+
+      const movementId = `mov-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const movement: StockMovement = {
+        id: movementId,
+        productId: prod.id,
+        productName: prod.name,
+        productBarcode: prod.barcode,
+        productSku: prod.sku,
+        productImage: prod.image,
+        productUnit: prod.unit,
+        type,
+        typeLabel: formatMovementTypeLabel(type),
+        previousStock,
+        newStock,
+        delta: calculatedDelta,
+        operator: operator || 'Operador',
+        reason: reason.trim(),
+        auditPayload: {
+          origin: auditPayload?.origin || 'manual',
+          timestamp: new Date().toISOString(),
+          operatorEmail: operator || 'Operador',
+          photoAttached: auditPayload?.photoAttached || false,
+          photoUrl: auditPayload?.photoUrl,
+          aiPrompt: auditPayload?.aiPrompt,
+          aiInterpretation: auditPayload?.aiInterpretation,
+          extraDetails: auditPayload?.extraDetails,
+        },
+        timestamp: new Date().toISOString(),
       };
-      putReq.onerror = () => {
-        addLog('DB', 'error', `Erro ao gravar novo estoque de "${prod.name}":`, putReq.error);
-        reject(putReq.error);
+
+      prodStore.put(updatedProduct);
+      movStore.put(movement);
+
+      tx.oncomplete = () => {
+        addLog(
+          'DB',
+          'success',
+          `Movimentação Kardex gravada: [${movement.typeLabel}] "${prod.name}" (${calculatedDelta >= 0 ? '+' : ''}${calculatedDelta}) | Saldo: ${previousStock} -> ${newStock} | Op: ${operator}`,
+          {
+            movementId,
+            reason: movement.reason,
+            audit: movement.auditPayload,
+          }
+        );
+        resolve({ product: updatedProduct, movement });
+      };
+
+      tx.onerror = () => {
+        addLog('DB', 'error', `Falha ao gravar movimentação para "${prod.name}":`, tx.error);
+        reject(tx.error);
       };
     };
 
     getReq.onerror = () => {
-      addLog('DB', 'error', `Erro ao buscar produto ${id} no IndexedDB:`, getReq.error);
       reject(getReq.error);
     };
   });
+}
+
+/**
+ * Retorna todo o histórico de movimentações ordenado decrescentemente por data
+ */
+export async function getAllMovements(): Promise<StockMovement[]> {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORE_MOVEMENTS], 'readonly');
+    const store = tx.objectStore(STORE_MOVEMENTS);
+    const request = store.getAll();
+
+    request.onsuccess = () => {
+      const movs = (request.result || []) as StockMovement[];
+      movs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      resolve(movs);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Retorna as movimentações de um produto específico
+ */
+export async function getMovementsByProductId(productId: string): Promise<StockMovement[]> {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORE_MOVEMENTS], 'readonly');
+    const store = tx.objectStore(STORE_MOVEMENTS);
+    const index = store.index('productId');
+    const request = index.getAll(productId);
+
+    request.onsuccess = () => {
+      const movs = (request.result || []) as StockMovement[];
+      movs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      resolve(movs);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Atualização de estoque sempre registrada no Kardex
+ */
+export async function updateProductStock(
+  id: string,
+  delta: number,
+  operator: string = 'admin@distribuidora.com.br',
+  reason: string = 'Ajuste manual com registro automático de auditoria'
+): Promise<Product> {
+  const res = await recordStockMovement({
+    productId: id,
+    type: delta > 0 ? 'entrada_compra' : 'saida_venda',
+    delta,
+    operator,
+    reason,
+    auditPayload: {
+      origin: 'manual',
+    },
+  });
+  return res.product;
 }
 
 export async function deleteProduct(id: string): Promise<void> {
@@ -346,12 +579,14 @@ export async function deleteProduct(id: string): Promise<void> {
  */
 export async function exportBackup(): Promise<string> {
   const products = await getAllProducts();
+  const movements = await getAllMovements();
   const backup: ERPBackup = {
-    version: '1.0.0',
+    version: '2.0.0',
     exportedAt: new Date().toISOString(),
     app: 'Distribuidora ERP Inteligente',
     totalProducts: products.length,
     products,
+    movements,
   };
   return JSON.stringify(backup, null, 2);
 }
@@ -359,7 +594,7 @@ export async function exportBackup(): Promise<string> {
 /**
  * Restaura dados do JSON para o IndexedDB
  */
-export async function importBackup(jsonString: string): Promise<{ count: number }> {
+export async function importBackup(jsonString: string): Promise<{ count: number; movementsCount?: number }> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonString);
@@ -373,10 +608,12 @@ export async function importBackup(jsonString: string): Promise<{ count: number 
   }
 
   const productList = data.products;
+  const movementList = Array.isArray(data.movements) ? data.movements : [];
   const db = await getDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction([STORE_PRODUCTS], 'readwrite');
+    const tx = db.transaction([STORE_PRODUCTS, STORE_MOVEMENTS], 'readwrite');
     const store = tx.objectStore(STORE_PRODUCTS);
+    const movStore = tx.objectStore(STORE_MOVEMENTS);
 
     let count = 0;
     productList.forEach((prod) => {
@@ -386,7 +623,18 @@ export async function importBackup(jsonString: string): Promise<{ count: number 
       }
     });
 
-    tx.oncomplete = () => resolve({ count });
+    let movementsCount = 0;
+    movementList.forEach((mov) => {
+      if (mov && mov.id && mov.productId) {
+        movStore.put(mov);
+        movementsCount++;
+      }
+    });
+
+    tx.oncomplete = () => {
+      addLog('DB', 'success', `Backup restaurado: ${count} produtos e ${movementsCount} movimentações.`);
+      resolve({ count, movementsCount });
+    };
     tx.onerror = () => reject(tx.error);
   });
 }
@@ -397,12 +645,39 @@ export async function importBackup(jsonString: string): Promise<{ count: number 
 export async function resetDatabaseToDemo(): Promise<void> {
   const db = await getDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction([STORE_PRODUCTS], 'readwrite');
+    const tx = db.transaction([STORE_PRODUCTS, STORE_MOVEMENTS], 'readwrite');
     const store = tx.objectStore(STORE_PRODUCTS);
+    const movStore = tx.objectStore(STORE_MOVEMENTS);
     store.clear();
+    movStore.clear();
 
-    INITIAL_PRODUCTS_SEED.forEach((prod) => {
+    INITIAL_PRODUCTS_SEED.forEach((prod, index) => {
       store.put(prod);
+
+      const initialMovement: StockMovement = {
+        id: `seed-mov-${prod.id}`,
+        productId: prod.id,
+        productName: prod.name,
+        productBarcode: prod.barcode,
+        productSku: prod.sku,
+        productImage: prod.image,
+        productUnit: prod.unit,
+        type: 'saldo_inicial',
+        typeLabel: 'Saldo Inicial / Implantação',
+        previousStock: 0,
+        newStock: prod.stock,
+        delta: prod.stock,
+        operator: 'admin@distribuidora.com.br',
+        reason: 'Inventário físico inicial apurado no onboarding do sistema ERP.',
+        auditPayload: {
+          origin: 'importacao',
+          timestamp: new Date(Date.now() - (4 - index) * 3600000).toISOString(),
+          operatorEmail: 'admin@distribuidora.com.br',
+          extraDetails: { seed: true },
+        },
+        timestamp: new Date(Date.now() - (4 - index) * 3600000).toISOString(),
+      };
+      movStore.put(initialMovement);
     });
 
     tx.oncomplete = () => resolve();

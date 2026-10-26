@@ -10,6 +10,8 @@ import {
   Sparkles,
   Barcode,
   Check,
+  Lock,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { Product, ProductCategory, UnitType, PackageType } from '../types/index.ts';
 import { calculateMargin, generateEAN13, formatCurrency } from '../utils/calculations.ts';
@@ -20,6 +22,7 @@ interface ProductBottomSheetProps {
   onClose: () => void;
   onSave: (updatedProduct: Product) => Promise<void>;
   onDelete: (productId: string) => Promise<void>;
+  onOpenMovement?: (product: Product) => void;
 }
 
 export const ProductBottomSheet: React.FC<ProductBottomSheetProps> = ({
@@ -27,6 +30,7 @@ export const ProductBottomSheet: React.FC<ProductBottomSheetProps> = ({
   onClose,
   onSave,
   onDelete,
+  onOpenMovement,
 }) => {
   if (!product) return null;
 
@@ -489,29 +493,51 @@ export const ProductBottomSheet: React.FC<ProductBottomSheetProps> = ({
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-                <div>
-                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Estoque Atual (Qtd)
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.stock}
-                    onChange={(e) => updateField('stock', Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-bold focus:outline-none"
-                  />
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                {/* Saldo de Estoque Protegido (Separação Estrita de Cadastro e Movimentações) */}
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/90 dark:border-slate-700 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      <Lock className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Saldo em Estoque (Protegido)</span>
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 font-extrabold text-xs">
+                      {formData.stock} {formData.unit}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">
+                    A quantidade em estoque não é editável diretamente no cadastro. Todas as alterações exigem registro imutável no Kardex com motivo e operador.
+                  </p>
+                  {onOpenMovement && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onOpenMovement(formData);
+                      }}
+                      className="w-full py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition shadow-xs cursor-pointer"
+                    >
+                      <ArrowRightLeft className="w-3.5 h-3.5" />
+                      <span>Movimentar Estoque Deste Item</span>
+                    </button>
+                  )}
                 </div>
 
+                {/* Parâmetro de Alerta de Reposição (Regra de Catálogo) */}
                 <div>
                   <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Estoque Mínimo (Alerta)
+                    Estoque Mínimo para Alerta de Reposição
                   </label>
                   <input
                     type="number"
+                    min="0"
                     value={formData.minStock}
-                    onChange={(e) => updateField('minStock', Number(e.target.value))}
+                    onChange={(e) => updateField('minStock', Math.max(0, Number(e.target.value)))}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-sm font-bold focus:outline-none"
                   />
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">
+                    Define o gatilho para sinalização de reposição e alertas automáticos.
+                  </span>
                 </div>
               </div>
             </div>

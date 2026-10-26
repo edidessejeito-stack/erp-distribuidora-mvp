@@ -1,12 +1,23 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Plus, Minus, AlertTriangle, PackageOpen, Filter } from 'lucide-react';
+import {
+  Search,
+  Plus,
+  AlertTriangle,
+  PackageOpen,
+  ArrowRightLeft,
+  Sparkles,
+  History,
+  Tag,
+} from 'lucide-react';
 import { Product, ProductCategory } from '../types/index.ts';
 import { formatCurrency, isLowStock } from '../utils/calculations.ts';
 
 interface StockListProps {
   products: Product[];
   onSelectProduct: (product: Product) => void;
-  onQuickUpdateStock: (productId: string, delta: number) => void;
+  onOpenMovement: (product: Product) => void;
+  onOpenAIAdjustment: (product?: Product | null) => void;
+  onOpenMovementsTab: () => void;
   onOpenAddNew: () => void;
 }
 
@@ -24,16 +35,17 @@ const CATEGORIES: ('Todos' | ProductCategory | 'Estoque Baixo')[] = [
 export const StockList: React.FC<StockListProps> = ({
   products,
   onSelectProduct,
-  onQuickUpdateStock,
+  onOpenMovement,
+  onOpenAIAdjustment,
+  onOpenMovementsTab,
   onOpenAddNew,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<'Todos' | ProductCategory | 'Estoque Baixo'>('Todos');
 
-  // Filtragem instantânea (0ms)
+  // Filtragem instantânea
   const filteredProducts = useMemo(() => {
     return products.filter((prod) => {
-      // Filtro de busca
       const q = searchQuery.toLowerCase().trim();
       const matchQuery =
         !q ||
@@ -44,7 +56,6 @@ export const StockList: React.FC<StockListProps> = ({
 
       if (!matchQuery) return false;
 
-      // Filtro de categoria / estoque baixo
       if (selectedCategory === 'Todos') return true;
       if (selectedCategory === 'Estoque Baixo') return isLowStock(prod.stock, prod.minStock);
       return prod.category === selectedCategory;
@@ -55,7 +66,39 @@ export const StockList: React.FC<StockListProps> = ({
 
   return (
     <div className="space-y-4 pb-24 animate-fadeIn">
-      {/* Barra de Busca Instantânea Minimalista */}
+      {/* Barra de Ações do Topo */}
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-extrabold text-slate-900 dark:text-white tracking-tight">
+            Catálogo & Estoque
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {products.length} itens cadastrados no ERP
+          </p>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => onOpenAIAdjustment(null)}
+            className="min-h-[40px] px-3 rounded-xl bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-xs"
+            title="Ajuste de Estoque com IA / Foto"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+            <span className="hidden sm:inline">Ajuste IA</span>
+          </button>
+
+          <button
+            onClick={onOpenMovementsTab}
+            className="min-h-[40px] px-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+            title="Ver Histórico Kardex"
+          >
+            <History className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+            <span className="hidden sm:inline">Kardex</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Barra de Busca Instantânea */}
       <div className="relative">
         <input
           type="text"
@@ -141,7 +184,7 @@ export const StockList: React.FC<StockListProps> = ({
                 className="bg-white dark:bg-slate-800/90 rounded-2xl p-3 border border-slate-100 dark:border-slate-800 shadow-xs flex items-center justify-between gap-3 cursor-pointer hover:border-blue-200 dark:hover:border-slate-700 active:bg-slate-50 dark:active:bg-slate-750 transition"
               >
                 {/* 1. Miniatura da foto arredondada */}
-                <div className="w-13 h-13 rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-700 flex-shrink-0 flex items-center justify-center border border-slate-100 dark:border-slate-700">
+                <div className="w-13 h-13 rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-700 shrink-0 flex items-center justify-center border border-slate-100 dark:border-slate-700">
                   {product.image ? (
                     <img
                       src={product.image}
@@ -155,51 +198,41 @@ export const StockList: React.FC<StockListProps> = ({
                   )}
                 </div>
 
-                {/* 2. Nome / Medida e 3. Preço de Venda em Destaque */}
+                {/* 2. Informações Gerais do Produto */}
                 <div className="flex-1 min-w-0 pr-1">
-                  <h4 className="text-sm font-medium text-slate-900 dark:text-white truncate leading-snug">
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate leading-snug">
                     {product.name}
                   </h4>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-sm font-bold text-slate-900 dark:text-white">
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className="text-xs font-extrabold text-slate-900 dark:text-white">
                       {formatCurrency(product.salePrice)}
                     </span>
-                    <span className="text-xs text-slate-400">
+                    <span className="text-[11px] text-slate-400">
                       / {product.unit}
                     </span>
-                    {low && (
-                      <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-0.5 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 rounded-md">
-                        <AlertTriangle className="w-2.5 h-2.5" />
-                        Baixo
-                      </span>
-                    )}
+                    {/* Badge de Estoque Auditado */}
+                    <span
+                      className={`text-[11px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 ${
+                        low
+                          ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-900'
+                          : 'bg-slate-100 dark:bg-slate-700/60 text-slate-700 dark:text-slate-200'
+                      }`}
+                    >
+                      {low && <AlertTriangle className="w-2.5 h-2.5" />}
+                      <span>Estoque: {product.stock} {product.unit}</span>
+                    </span>
                   </div>
                 </div>
 
-                {/* 4. Controle Rápido de Quantidade (- Qtd +) com UI Otimista */}
-                <div
-                  className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900/60 p-1 rounded-xl border border-slate-100 dark:border-slate-800 flex-shrink-0"
-                  onClick={(e) => e.stopPropagation()}
-                >
+                {/* 3. Botão Dedicado "Movimentar" com Rastreabilidade */}
+                <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
                   <button
-                    onClick={() => onQuickUpdateStock(product.id, -1)}
-                    disabled={product.stock <= 0}
-                    className="w-8 h-8 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed shadow-xs active:scale-95 transition"
-                    title="Diminuir estoque"
-                    aria-label={`Diminuir estoque de ${product.name}`}
+                    onClick={() => onOpenMovement(product)}
+                    className="min-h-[40px] px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-600 text-blue-700 dark:text-blue-300 hover:text-white border border-blue-200/80 dark:border-blue-800 font-bold text-xs flex items-center gap-1.5 transition active:scale-95 shadow-xs cursor-pointer"
+                    title={`Movimentar estoque de ${product.name}`}
                   >
-                    <Minus className="w-3.5 h-3.5" />
-                  </button>
-                  <span className="w-8 text-center font-bold text-xs text-slate-900 dark:text-white">
-                    {product.stock}
-                  </span>
-                  <button
-                    onClick={() => onQuickUpdateStock(product.id, 1)}
-                    className="w-8 h-8 rounded-lg bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 shadow-xs active:scale-95 transition"
-                    title="Aumentar estoque"
-                    aria-label={`Aumentar estoque de ${product.name}`}
-                  >
-                    <Plus className="w-3.5 h-3.5" />
+                    <ArrowRightLeft className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Movimentar</span>
                   </button>
                 </div>
               </div>

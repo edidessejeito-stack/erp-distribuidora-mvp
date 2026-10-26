@@ -10,7 +10,7 @@ interface HeaderProps {
   lowStockCount: number;
   logCount: number;
   errorCount: number;
-  onSelectTab: (tab: 'inicio' | 'camera' | 'estoque') => void;
+  onSelectTab: (tab: 'inicio' | 'camera' | 'estoque' | 'movimentacoes') => void;
   installPrompt: (() => Promise<boolean>) | null;
 }
 

@@ -62,14 +62,6 @@ export interface Product {
   source: 'ai' | 'manual' | 'edited';
 }
 
-export interface ERPBackup {
-  version: string;
-  exportedAt: string;
-  app: string;
-  totalProducts: number;
-  products: Product[];
-}
-
 export interface NotificationAlert {
   id: string;
   productId: string;
@@ -78,4 +70,70 @@ export interface NotificationAlert {
   minStock: number;
   timestamp: number;
   read: boolean;
+}
+
+export type MovementType =
+  | 'entrada_compra'
+  | 'saida_venda'
+  | 'ajuste_inventario'
+  | 'contagem_diaria'
+  | 'perda_avaria'
+  | 'saldo_inicial';
+
+export interface MovementAuditPayload {
+  origin: 'manual' | 'ia_assistida' | 'inventario_camera' | 'importacao';
+  timestamp: string;
+  operatorEmail: string;
+  photoAttached?: boolean;
+  photoUrl?: string;
+  aiPrompt?: string;
+  aiInterpretation?: string;
+  extraDetails?: Record<string, unknown>;
+}
+
+export interface StockMovement {
+  id: string;
+  productId: string;
+  productName: string;
+  productBarcode?: string;
+  productSku?: string;
+  productImage?: string;
+  productUnit?: UnitType | string;
+
+  type: MovementType;
+  typeLabel: string; // Ex: 'Entrada por Compra', 'Ajuste de Inventário'
+
+  previousStock: number; // Estoque Anterior
+  newStock: number;      // Estoque Atual pós-movimentação
+  delta: number;         // Delta calculado (ex: +10, -5)
+
+  operator: string;      // Operador / Responsável logado
+  reason: string;        // Motivo / Observação obrigatório
+
+  auditPayload: MovementAuditPayload;
+  timestamp: string;     // ISO Date
+}
+
+export interface StockAdjustmentAIProposal {
+  matchedProductId: string;
+  matchedProductName: string;
+  currentStock: number;
+  proposedNewStock: number;
+  calculatedDelta: number;
+  movementType: MovementType;
+  typeLabel: string;
+  proposedReason: string;
+  aiExplanation: string;
+  rawConfidence?: 'alta' | 'media' | 'baixa';
+  sourceImage?: string;
+  sourcePrompt?: string;
+}
+
+export interface ERPBackup {
+  version: string;
+  exportedAt: string;
+  app: string;
+  totalProducts: number;
+  products: Product[];
+  movements?: StockMovement[];
 }

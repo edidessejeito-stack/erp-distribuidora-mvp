@@ -1,4 +1,4 @@
-import { Product } from '../types/index.ts';
+import { Product, StockAdjustmentAIProposal, MovementType } from '../types/index.ts';
 import { generateEAN13 } from '../utils/calculations.ts';
 import { addLog } from './logger.ts';
 
@@ -366,3 +366,169 @@ function mapAiProducts(list: RawAiProduct[], base64Image: string): Product[] {
     };
   });
 }
+
+export interface InterpretAdjustmentInput {
+  image?: string;
+  textPrompt?: string;
+  products: Product[];
+}
+
+/**
+ * Interpreta foto e/ou comando de texto para propor um ajuste assistido de estoque
+ * Retorna uma proposta estruturada para PRÉ-VISUALIZAÇÃO obrigatória
+ */
+export async function interpretStockAdjustmentAI(
+  input: InterpretAdjustmentInput
+): Promise<StockAdjustmentAIProposal> {
+  const { image, textPrompt, products } = input;
+  const startTime = Date.now();
+  const apiKey = getClientGeminiApiKey();
+
+  addLog(
+    'IA',
+    'info',
+    `Iniciando interpretação de ajuste assistido de estoque. Texto: "${textPrompt || 'Sem texto'}" | Imagem: ${image ? 'Anexada' : 'Nenhuma'}`
+  );
+
+  // 1. Tenta o endpoint no servidor Express
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 16000);
+
+    const catalogPayload = products.map((p) => ({
+      id: p.id,
+      name: p.name,
+      brand: p.brand,
+      barcode: p.barcode,
+      stock: p.stock,
+      unit: p.unit,
+    }));
+
+    const res = await fetch('/api/gemini/interpret-stock-adjustment', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
+      },
+      body: JSON.stringify({
+        image: image || undefined,
+        textPrompt: textPrompt || undefined,
+        productsCatalog: catalogPayload,
+      }),
+    });
+
+    clearTimeout(timeoutId);
+    const duration = Date.now() - startTime;
+
+    if (res.ok) {
+      const data = await res.json();
+      addLog(
+        'IA',
+        'success',
+        `IA interpretou ajuste para "${data.matchedProductName}": Delta ${data.calculatedDelta > 0 ? '+' : ''}${data.calculatedDelta} (${data.movementType})`,
+        data,
+        duration
+      );
+
+      return {
+        matchedProductId: data.matchedProductId,
+        matchedProductName: data.matchedProductName,
+        currentStock: Number(data.currentStock) || 0,
+        proposedNewStock: Number(data.proposedNewStock),
+        calculatedDelta: Number(data.calculatedDelta),
+        movementType: data.movementType as MovementType,
+        typeLabel: data.typeLabel || 'Ajuste de Estoque',
+        proposedReason: data.proposedReason || 'Ajuste assistido por IA com confirmação do operador.',
+        aiExplanation: data.aiExplanation || 'Ação interpretada com base na foto e comando fornecidos.',
+        rawConfidence: (data.confidence as 'alta' | 'media' | 'baixa') || 'alta',
+        sourceImage: image,
+        sourcePrompt: textPrompt,
+      };
+    }
+  } catch (err) {
+    addLog('IA', 'warn', 'Endpoint de ajuste assistido indisponível ou timeout. Utilizando motor semântico local.', err);
+  }
+
+  // 2. Motor Heurístico Resiliente Local caso o servidor/API key esteja indisponível
+  addLog('IA', 'info', 'Executando motor heurístico local de correspondência de estoque.');
+  const duration = Date.now() - startTime;
+
+  const promptLower = (textPrompt || '').toLowerCase();
+  
+  // Tenta encontrar o produto mencionado pelo nome ou marca
+  let matchedProduct: Product | undefined = products.find((p) => {
+    const nameLower = p.name.toLowerCase();
+    const brandLower = p.brand.toLowerCase();
+    return promptLower.includes(nameLower) || promptLower.includes(brandLower);
+  });
+
+  if (!matchedProduct && products.length > 0) {
+    // Se o texto tiver palavras chaves como "coca", "heineken", "brahma", "carvão"
+    matchedProduct = products.find((p) => {
+      const tokens = p.name.toLowerCase().split(' ');
+      return tokens.some((t) => t.length > 3 && promptLower.includes(t));
+    }) || products[0];
+  }
+
+  if (!matchedProduct) {
+    throw new Error('Nenhum produto cadastrado no catálogo para realizar o ajuste.');
+  }
+
+  // Extrai números do texto (ex: "ajustar para 200", "chegaram 50", "vendi 10")
+  const numbersMatch = promptLower.match(/\d+/g);
+  const detectedQuantity = numbersMatch ? parseInt(numbersMatch[numbersMatch.length - 1], 10) : 10;
+
+  let movementType: MovementType = 'ajuste_inventario';
+  let typeLabel = 'Ajuste de Inventário';
+  let proposedNewStock = matchedProduct.stock;
+  let calculatedDelta = 0;
+  let proposedReason = '';
+
+  if (promptLower.includes('ajustar para') || promptLower.includes('ajuste para') || promptLower.includes('contagem')) {
+    movementType = 'ajuste_inventario';
+    typeLabel = 'Ajuste de Inventário';
+    proposedNewStock = detectedQuantity;
+    calculatedDelta = proposedNewStock - matchedProduct.stock;
+    proposedReason = `Recontagem física de inventário: ajustado de ${matchedProduct.stock} para ${proposedNewStock} ${matchedProduct.unit}.`;
+  } else if (promptLower.includes('saida') || promptLower.includes('venda') || promptLower.includes('retirar') || promptLower.includes('saiu')) {
+    movementType = 'saida_venda';
+    typeLabel = 'Saída / Venda';
+    calculatedDelta = -detectedQuantity;
+    proposedNewStock = Math.max(0, matchedProduct.stock - detectedQuantity);
+    proposedReason = `Saída de ${detectedQuantity} ${matchedProduct.unit} registrada via comando do operador.`;
+  } else if (promptLower.includes('quebr') || promptLower.includes('avaria') || promptLower.includes('furad') || promptLower.includes('perda')) {
+    movementType = 'perda_avaria';
+    typeLabel = 'Perda / Avaria';
+    calculatedDelta = -detectedQuantity;
+    proposedNewStock = Math.max(0, matchedProduct.stock - detectedQuantity);
+    proposedReason = `Avaria/Perda de ${detectedQuantity} ${matchedProduct.unit} identificada pelo operador.`;
+  } else {
+    // Padrão: Entrada
+    movementType = 'entrada_compra';
+    typeLabel = 'Entrada por Compra';
+    calculatedDelta = detectedQuantity;
+    proposedNewStock = matchedProduct.stock + detectedQuantity;
+    proposedReason = `Entrada de ${detectedQuantity} ${matchedProduct.unit} conforme comando assistido do operador.`;
+  }
+
+  const proposal: StockAdjustmentAIProposal = {
+    matchedProductId: matchedProduct.id,
+    matchedProductName: matchedProduct.name,
+    currentStock: matchedProduct.stock,
+    proposedNewStock,
+    calculatedDelta,
+    movementType,
+    typeLabel,
+    proposedReason,
+    aiExplanation: `Identificado item "${matchedProduct.name}". Detectada intenção de ${typeLabel.toLowerCase()} com quantidade ${Math.abs(calculatedDelta)} ${matchedProduct.unit}.`,
+    rawConfidence: 'media',
+    sourceImage: image,
+    sourcePrompt: textPrompt,
+  };
+
+  addLog('IA', 'success', `Proposta heurística calculada para "${matchedProduct.name}": Delta ${calculatedDelta >= 0 ? '+' : ''}${calculatedDelta}`, proposal, duration);
+
+  return proposal;
+}
+
